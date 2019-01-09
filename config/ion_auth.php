@@ -121,9 +121,9 @@ $config['identity_cookie_name'] = 'identity';
   | 	  array  = Manually set your email config settings
  */
 $config['use_ci_email'] = FALSE; // Send Email using the builtin CI email class, if false it will return the code and the identity
-$config['email_config'] = array(
+$config['email_config'] = [
     'mailtype' => 'html',
-);
+];
 
 /*
   | -------------------------------------------------------------------------

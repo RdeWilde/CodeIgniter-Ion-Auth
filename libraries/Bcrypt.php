@@ -14,7 +14,7 @@ class Bcrypt {
      * @param array $params
      * @throws Exception
      */
-    public function __construct($params = array('rounds' => 7, 'salt_prefix' => '$2y$')) {
+    public function __construct($params = ['rounds' => 7, 'salt_prefix' => '$2y$']) {
 
         if (CRYPT_BLOWFISH != 1) {
             throw new Exception("bcrypt not supported in this installation. See http://php.net/crypt");
