@@ -1,558 +1,703 @@
-<?php
+<?php defined('BASEPATH') OR exit('No direct script access allowed');
 
-defined('BASEPATH') OR exit('No direct script access allowed');
+/**
+ * Class Auth
+ * @property Ion_auth|Ion_auth_model $ion_auth        The ION Auth spark
+ * @property CI_Form_validation      $form_validation The form validation library
+ */
+class Auth extends CI_Controller
+{
+	public $data = [];
 
-class Auth extends CI_Controller {
+	public function __construct()
+	{
+		parent::__construct();
+		$this->load->database();
+		$this->load->library(['ion_auth', 'form_validation']);
+		$this->load->helper(['url', 'language']);
 
-    public function __construct() {
-        parent::__construct();
-        $this->load->database();
-        $this->load->library(['ion_auth', 'form_validation']);
-        $this->load->helper(['url', 'language']);
+		$this->form_validation->set_error_delimiters($this->config->item('error_start_delimiter', 'ion_auth'), $this->config->item('error_end_delimiter', 'ion_auth'));
 
-        $this->form_validation->set_error_delimiters($this->config->item('error_start_delimiter', 'ion_auth'), $this->config->item('error_end_delimiter', 'ion_auth'));
+		$this->lang->load('auth');
+	}
 
-        $this->lang->load('auth');
-    }
+	/**
+	 * Redirect if needed, otherwise display the user list
+	 */
+	public function index()
+	{
 
-    // redirect if needed, otherwise display the user list
-    public function index() {
+		if (!$this->ion_auth->logged_in())
+		{
+			// redirect them to the login page
+			redirect('auth/login', 'refresh');
+		}
+		else if (!$this->ion_auth->is_admin()) // remove this elseif if you want to enable this for non-admins
+		{
+			// redirect them to the home page because they must be an administrator to view this
+			show_error('You must be an administrator to view this page.');
+		}
+		else
+		{
+			$this->data['title'] = $this->lang->line('index_heading');
 
-        if (!$this->ion_auth->logged_in()) {
-            // redirect them to the login page
-            redirect('auth/login', 'refresh');
-        } elseif (!$this->ion_auth->is_admin()) { // remove this elseif if you want to enable this for non-admins
-            // redirect them to the home page because they must be an administrator to view this
-            return show_error('You must be an administrator to view this page.');
-        } else {
-            // set the flash data error message if there is one
-            $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
+			// set the flash data error message if there is one
+			$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
 
-            //list the users
-            $this->data['users'] = $this->ion_auth->users()->result();
-            foreach ($this->data['users'] as $k => $user) {
-                $this->data['users'][$k]->groups = $this->ion_auth->get_users_groups($user->id)->result();
-            }
+			//list the users
+			$this->data['users'] = $this->ion_auth->users()->result();
+			foreach ($this->data['users'] as $k => $user)
+			{
+				$this->data['users'][$k]->groups = $this->ion_auth->get_users_groups($user->id)->result();
+			}
 
-            $this->_render_page('auth/index', $this->data);
-        }
-    }
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'index', $this->data);
+		}
+	}
 
-    // log the user in
-    public function login() {
-        $this->data['title'] = $this->lang->line('login_heading');
+	/**
+	 * Log the user in
+	 */
+	public function login()
+	{
+		$this->data['title'] = $this->lang->line('login_heading');
 
-        //validate form input
-        $this->form_validation->set_rules('identity', str_replace(':', '', $this->lang->line('login_identity_label')), 'required');
-        $this->form_validation->set_rules('password', str_replace(':', '', $this->lang->line('login_password_label')), 'required');
+		// validate form input
+		$this->form_validation->set_rules('identity', str_replace(':', '', $this->lang->line('login_identity_label')), 'required');
+		$this->form_validation->set_rules('password', str_replace(':', '', $this->lang->line('login_password_label')), 'required');
 
-        if ($this->form_validation->run() == true) {
-            // check to see if the user is logging in
-            // check for "remember me"
-            $remember = (bool) $this->input->post('remember');
+		if ($this->form_validation->run() === TRUE)
+		{
+			// check to see if the user is logging in
+			// check for "remember me"
+			$remember = (bool)$this->input->post('remember');
 
-            if ($this->ion_auth->login($this->input->post('identity'), $this->input->post('password'), $remember)) {
-                if ($this->ion_auth->is_otp_set($this->input->post('identity'))) {
-                    $activation_code = $this->ion_auth->set_otp_login_activation($this->input->post('identity'));
-                    if ($activation_code) {
-                        $this->session->set_flashdata('otp_login_key', $activation_code);
-                        $this->session->set_flashdata('identity', $this->input->post('identity'));
-                        $this->session->set_flashdata('remember_me', $remember);
-                        redirect('auth/login_otp', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
-                    }
-                    //if the set activation was un-successful
-                    //redirect them back to the login page
-                    $this->session->set_flashdata('message', $this->ion_auth->errors());
-                    redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
-                }
-                //if the login is successful
-                //redirect them back to the home page
-                $this->session->set_flashdata('message', $this->ion_auth->messages());
-                redirect('/', 'refresh');
-            } else {
-                // if the login was un-successful
-                // redirect them back to the login page
-                $this->session->set_flashdata('message', $this->ion_auth->errors());
-                redirect('auth/login', 'refresh'); // use redirects instead of loading views for compatibility with MY_Controller libraries
-            }
-        } else {
-            // the user is not logging in so display the login page
-            // set the flash data error message if there is one
-            $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
+			if ($this->ion_auth->login($this->input->post('identity'), $this->input->post('password'), $remember))
+			{
+				if ($this->ion_auth->is_otp_set($this->input->post('identity')))
+				{
+					$activation_code = $this->ion_auth->set_otp_login_activation($this->input->post('identity'));
+					if ($activation_code)
+					{
+						$this->session->set_flashdata('otp_login_key', $activation_code);
+						$this->session->set_flashdata('identity', $this->input->post('identity'));
+						$this->session->set_flashdata('remember_me', $remember);
+						redirect('auth/login_otp', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
+					}
+					//if the set activation was un-successful
+					//redirect them back to the login page
+					$this->session->set_flashdata('message', $this->ion_auth->errors());
+					redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
+				}
+				//if the login is successful
+				//redirect them back to the home page
+				$this->session->set_flashdata('message', $this->ion_auth->messages());
+				redirect('/', 'refresh');
+			}
+			else
+			{
+				// if the login was un-successful
+				// redirect them back to the login page
+				$this->session->set_flashdata('message', $this->ion_auth->errors());
+				redirect('auth/login', 'refresh'); // use redirects instead of loading views for compatibility with MY_Controller libraries
+			}
+		}
+		else
+		{
+			// the user is not logging in so display the login page
+			// set the flash data error message if there is one
+			$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
 
-            $this->data['identity'] = ['name' => 'identity',
-                'id' => 'identity',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('identity'),
-			];
-            $this->data['password'] = ['name' => 'password',
-                'id' => 'password',
-                'type' => 'password',
-			];
-
-            $this->_render_page('auth/login', $this->data);
-        }
-    }
-
-    //login with two-step authentication
-    function login_otp() {
-        $this->data['title'] = "Login";
-
-        //validate form input
-        $this->form_validation->set_rules('token', 'Token', 'required');
-        $this->form_validation->set_rules('identity', 'Identity');
-        $this->form_validation->set_rules('otp_login_key', 'Login key');
-        $this->form_validation->set_rules('remember', 'Remember Me');
-
-        if ($this->form_validation->run() == true) {
-            $remember = (bool) $this->input->post('remember');
-
-            if ($this->ion_auth->is_otp_set($this->input->post('identity'))) {
-                if ($this->ion_auth->otp_login($this->input->post('identity'), $this->input->post('token'), $remember, $this->input->post('otp_login_key'))) {
-                    //if the login is successful
-                    //redirect them back to the home page
-                    $this->session->set_flashdata('message', $this->ion_auth->messages());
-                    redirect('/', 'refresh');
-                } else {
-                    //if the login was un-successful
-                    //redirect them back to the login page
-                    $this->session->set_flashdata('message', $this->ion_auth->errors());
-                    redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
-                }
-            } else {
-                //if the login was un-successful
-                //redirect them back to the login page
-                $this->session->set_flashdata('message', $this->ion_auth->errors());
-                redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
-            }
-        } else {
-            if ($this->session->flashdata('identity') == NULL || $this->session->flashdata('otp_login_key') == NULL) {
-                redirect('auth/login', 'refresh');
-            }
-            //the user is not logging in so display the login page
-            //set the flash data error message if there is one
-            $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
-
-            $this->data['token'] = ['name' => 'token',
-                'id' => 'token',
-                'type' => 'text'
-			];
-            $this->data['identity'] = [
-                'identity' => $this->session->flashdata('identity')
-			];
-            $this->data['remember'] = [
-                'remember' => $this->session->flashdata('remember_me')
-			];
-            $this->data['otp_login_key'] = [
-                'otp_login_key' => $this->session->flashdata('otp_login_key')
+			$this->data['identity'] = [
+				'name' => 'identity',
+				'id' => 'identity',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('identity'),
 			];
 
-            $this->_render_page('auth/login_otp', $this->data);
-        }
-    }
-
-    // log the user out
-    public function logout() {
-        $this->data['title'] = "Logout";
-
-        // log the user out
-        $logout = $this->ion_auth->logout();
-
-        // redirect them to the login page
-        $this->session->set_flashdata('message', $this->ion_auth->messages());
-        redirect('auth/login', 'refresh');
-    }
-
-    // change password
-    public function change_password() {
-        $this->form_validation->set_rules('old', $this->lang->line('change_password_validation_old_password_label'), 'required');
-        $this->form_validation->set_rules('new', $this->lang->line('change_password_validation_new_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|max_length[' . $this->config->item('max_password_length', 'ion_auth') . ']|matches[new_confirm]');
-        $this->form_validation->set_rules('new_confirm', $this->lang->line('change_password_validation_new_password_confirm_label'), 'required');
-
-        if (!$this->ion_auth->logged_in()) {
-            redirect('auth/login', 'refresh');
-        }
-
-        $user = $this->ion_auth->user()->row();
-
-        if ($this->form_validation->run() == false) {
-            // display the form
-            // set the flash data error message if there is one
-            $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
-
-            $this->data['min_password_length'] = $this->config->item('min_password_length', 'ion_auth');
-            $this->data['old_password'] = [
-                'name' => 'old',
-                'id' => 'old',
-                'type' => 'password',
-			];
-            $this->data['new_password'] = [
-                'name' => 'new',
-                'id' => 'new',
-                'type' => 'password',
-                'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
-			];
-            $this->data['new_password_confirm'] = [
-                'name' => 'new_confirm',
-                'id' => 'new_confirm',
-                'type' => 'password',
-                'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
-			];
-            $this->data['user_id'] = [
-                'name' => 'user_id',
-                'id' => 'user_id',
-                'type' => 'hidden',
-                'value' => $user->id,
+			$this->data['password'] = [
+				'name' => 'password',
+				'id' => 'password',
+				'type' => 'password',
 			];
 
-            // render
-            $this->_render_page('auth/change_password', $this->data);
-        } else {
-            $identity = $this->session->userdata('identity');
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'login', $this->data);
+		}
+	}
 
-            $change = $this->ion_auth->change_password($identity, $this->input->post('old'), $this->input->post('new'));
+	//login with two-step authentication
+	function login_otp() {
+		$this->data['title'] = "Login";
 
-            if ($change) {
-                //if the password was successfully changed
-                $this->session->set_flashdata('message', $this->ion_auth->messages());
-                $this->logout();
-            } else {
-                $this->session->set_flashdata('message', $this->ion_auth->errors());
-                redirect('auth/change_password', 'refresh');
-            }
-        }
-    }
+		//validate form input
+		$this->form_validation->set_rules('token', 'Token', 'required');
+		$this->form_validation->set_rules('identity', 'Identity');
+		$this->form_validation->set_rules('otp_login_key', 'Login key');
+		$this->form_validation->set_rules('remember', 'Remember Me');
 
-    // forgot password
-    public function forgot_password() {
-        // setting validation rules by checking whether identity is username or email
-        if ($this->config->item('identity', 'ion_auth') != 'email') {
-            $this->form_validation->set_rules('identity', $this->lang->line('forgot_password_identity_label'), 'required');
-        } else {
-            $this->form_validation->set_rules('identity', $this->lang->line('forgot_password_validation_email_label'), 'required|valid_email');
-        }
+		if ($this->form_validation->run() == true) {
+			$remember = (bool) $this->input->post('remember');
 
+			if ($this->ion_auth->is_otp_set($this->input->post('identity'))) {
+				if ($this->ion_auth->otp_login($this->input->post('identity'), $this->input->post('token'), $remember, $this->input->post('otp_login_key'))) {
+					//if the login is successful
+					//redirect them back to the home page
+					$this->session->set_flashdata('message', $this->ion_auth->messages());
+					redirect('/', 'refresh');
+				} else {
+					//if the login was un-successful
+					//redirect them back to the login page
+					$this->session->set_flashdata('message', $this->ion_auth->errors());
+					redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
+				}
+			} else {
+				//if the login was un-successful
+				//redirect them back to the login page
+				$this->session->set_flashdata('message', $this->ion_auth->errors());
+				redirect('auth/login', 'refresh'); //use redirects instead of loading views for compatibility with MY_Controller libraries
+			}
+		} else {
+			if ($this->session->flashdata('identity') == NULL || $this->session->flashdata('otp_login_key') == NULL) {
+				redirect('auth/login', 'refresh');
+			}
+			//the user is not logging in so display the login page
+			//set the flash data error message if there is one
+			$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
 
-        if ($this->form_validation->run() == false) {
-            $this->data['type'] = $this->config->item('identity', 'ion_auth');
-            // setup the input
-            $this->data['identity'] = ['name' => 'identity',
-                'id' => 'identity',
+			$this->data['token'] = ['name' => 'token',
+				'id' => 'token',
+				'type' => 'text'
+			];
+			$this->data['identity'] = [
+				'identity' => $this->session->flashdata('identity')
+			];
+			$this->data['remember'] = [
+				'remember' => $this->session->flashdata('remember_me')
+			];
+			$this->data['otp_login_key'] = [
+				'otp_login_key' => $this->session->flashdata('otp_login_key')
 			];
 
-            if ($this->config->item('identity', 'ion_auth') != 'email') {
-                $this->data['identity_label'] = $this->lang->line('forgot_password_identity_label');
-            } else {
-                $this->data['identity_label'] = $this->lang->line('forgot_password_email_identity_label');
-            }
+			$this->_render_page('auth/login_otp', $this->data);
+		}
+	}
 
-            // set any errors and display the form
-            $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
-            $this->_render_page('auth/forgot_password', $this->data);
-        } else {
-            $identity_column = $this->config->item('identity', 'ion_auth');
-            $identity = $this->ion_auth->where($identity_column, $this->input->post('identity'))->users()->row();
+	/**
+	 * Log the user out
+	 */
+	public function logout()
+	{
+		$this->data['title'] = "Logout";
 
-            if (empty($identity)) {
+		// log the user out
+		$this->ion_auth->logout();
 
-                if ($this->config->item('identity', 'ion_auth') != 'email') {
-                    $this->ion_auth->set_error('forgot_password_identity_not_found');
-                } else {
-                    $this->ion_auth->set_error('forgot_password_email_not_found');
-                }
+		// redirect them to the login page
+		$this->session->set_flashdata('message', $this->ion_auth->messages());
+		redirect('auth/login', 'refresh');
+	}
 
-                $this->session->set_flashdata('message', $this->ion_auth->errors());
-                redirect("auth/forgot_password", 'refresh');
-            }
+	/**
+	 * Change password
+	 */
+	public function change_password()
+	{
+		$this->form_validation->set_rules('old', $this->lang->line('change_password_validation_old_password_label'), 'required');
+		$this->form_validation->set_rules('new', $this->lang->line('change_password_validation_new_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|matches[new_confirm]');
+		$this->form_validation->set_rules('new_confirm', $this->lang->line('change_password_validation_new_password_confirm_label'), 'required');
 
-            // run the forgotten password method to email an activation code to the user
-            $forgotten = $this->ion_auth->forgotten_password($identity->{$this->config->item('identity', 'ion_auth')});
+		if (!$this->ion_auth->logged_in())
+		{
+			redirect('auth/login', 'refresh');
+		}
 
-            if ($forgotten) {
-                // if there were no errors
-                $this->session->set_flashdata('message', $this->ion_auth->messages());
-                redirect("auth/login", 'refresh'); //we should display a confirmation page here instead of the login page
-            } else {
-                $this->session->set_flashdata('message', $this->ion_auth->errors());
-                redirect("auth/forgot_password", 'refresh');
-            }
-        }
-    }
+		$user = $this->ion_auth->user()->row();
 
-    // reset password - final step for forgotten password
-    public function reset_password($code = NULL) {
-        if (!$code) {
-            show_404();
-        }
+		if ($this->form_validation->run() === FALSE)
+		{
+			// display the form
+			// set the flash data error message if there is one
+			$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
 
-        $user = $this->ion_auth->forgotten_password_check($code);
+			$this->data['min_password_length'] = $this->config->item('min_password_length', 'ion_auth');
+			$this->data['old_password'] = [
+				'name' => 'old',
+				'id' => 'old',
+				'type' => 'password',
+			];
+			$this->data['new_password'] = [
+				'name' => 'new',
+				'id' => 'new',
+				'type' => 'password',
+				'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
+			];
+			$this->data['new_password_confirm'] = [
+				'name' => 'new_confirm',
+				'id' => 'new_confirm',
+				'type' => 'password',
+				'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
+			];
+			$this->data['user_id'] = [
+				'name' => 'user_id',
+				'id' => 'user_id',
+				'type' => 'hidden',
+				'value' => $user->id,
+			];
 
-        if ($user) {
-            // if the code is valid then display the password reset form
+			// render
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'change_password', $this->data);
+		}
+		else
+		{
+			$identity = $this->session->userdata('identity');
 
-            $this->form_validation->set_rules('new', $this->lang->line('reset_password_validation_new_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|max_length[' . $this->config->item('max_password_length', 'ion_auth') . ']|matches[new_confirm]');
-            $this->form_validation->set_rules('new_confirm', $this->lang->line('reset_password_validation_new_password_confirm_label'), 'required');
+			$change = $this->ion_auth->change_password($identity, $this->input->post('old'), $this->input->post('new'));
 
-            if ($this->form_validation->run() == false) {
-                // display the form
-                // set the flash data error message if there is one
-                $this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
+			if ($change)
+			{
+				//if the password was successfully changed
+				$this->session->set_flashdata('message', $this->ion_auth->messages());
+				$this->logout();
+			}
+			else
+			{
+				$this->session->set_flashdata('message', $this->ion_auth->errors());
+				redirect('auth/change_password', 'refresh');
+			}
+		}
+	}
 
-                $this->data['min_password_length'] = $this->config->item('min_password_length', 'ion_auth');
-                $this->data['new_password'] = [
-                    'name' => 'new',
-                    'id' => 'new',
-                    'type' => 'password',
-                    'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
+	/**
+	 * Forgot password
+	 */
+	public function forgot_password()
+	{
+		$this->data['title'] = $this->lang->line('forgot_password_heading');
+
+		// setting validation rules by checking whether identity is username or email
+		if ($this->config->item('identity', 'ion_auth') != 'email')
+		{
+			$this->form_validation->set_rules('identity', $this->lang->line('forgot_password_identity_label'), 'required');
+		}
+		else
+		{
+			$this->form_validation->set_rules('identity', $this->lang->line('forgot_password_validation_email_label'), 'required|valid_email');
+		}
+
+
+		if ($this->form_validation->run() === FALSE)
+		{
+			$this->data['type'] = $this->config->item('identity', 'ion_auth');
+			// setup the input
+			$this->data['identity'] = [
+				'name' => 'identity',
+				'id' => 'identity',
+			];
+
+			if ($this->config->item('identity', 'ion_auth') != 'email')
+			{
+				$this->data['identity_label'] = $this->lang->line('forgot_password_identity_label');
+			}
+			else
+			{
+				$this->data['identity_label'] = $this->lang->line('forgot_password_email_identity_label');
+			}
+
+			// set any errors and display the form
+			$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'forgot_password', $this->data);
+		}
+		else
+		{
+			$identity_column = $this->config->item('identity', 'ion_auth');
+			$identity = $this->ion_auth->where($identity_column, $this->input->post('identity'))->users()->row();
+
+			if (empty($identity))
+			{
+
+				if ($this->config->item('identity', 'ion_auth') != 'email')
+				{
+					$this->ion_auth->set_error('forgot_password_identity_not_found');
+				}
+				else
+				{
+					$this->ion_auth->set_error('forgot_password_email_not_found');
+				}
+
+				$this->session->set_flashdata('message', $this->ion_auth->errors());
+				redirect("auth/forgot_password", 'refresh');
+			}
+
+			// run the forgotten password method to email an activation code to the user
+			$forgotten = $this->ion_auth->forgotten_password($identity->{$this->config->item('identity', 'ion_auth')});
+
+			if ($forgotten)
+			{
+				// if there were no errors
+				$this->session->set_flashdata('message', $this->ion_auth->messages());
+				redirect("auth/login", 'refresh'); //we should display a confirmation page here instead of the login page
+			}
+			else
+			{
+				$this->session->set_flashdata('message', $this->ion_auth->errors());
+				redirect("auth/forgot_password", 'refresh');
+			}
+		}
+	}
+
+	/**
+	 * Reset password - final step for forgotten password
+	 *
+	 * @param string|null $code The reset code
+	 */
+	public function reset_password($code = NULL)
+	{
+		if (!$code)
+		{
+			show_404();
+		}
+
+		$this->data['title'] = $this->lang->line('reset_password_heading');
+
+		$user = $this->ion_auth->forgotten_password_check($code);
+
+		if ($user)
+		{
+			// if the code is valid then display the password reset form
+
+			$this->form_validation->set_rules('new', $this->lang->line('reset_password_validation_new_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|matches[new_confirm]');
+			$this->form_validation->set_rules('new_confirm', $this->lang->line('reset_password_validation_new_password_confirm_label'), 'required');
+
+			if ($this->form_validation->run() === FALSE)
+			{
+				// display the form
+
+				// set the flash data error message if there is one
+				$this->data['message'] = (validation_errors()) ? validation_errors() : $this->session->flashdata('message');
+
+				$this->data['min_password_length'] = $this->config->item('min_password_length', 'ion_auth');
+				$this->data['new_password'] = [
+					'name' => 'new',
+					'id' => 'new',
+					'type' => 'password',
+					'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
 				];
-                $this->data['new_password_confirm'] = [
-                    'name' => 'new_confirm',
-                    'id' => 'new_confirm',
-                    'type' => 'password',
-                    'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
+				$this->data['new_password_confirm'] = [
+					'name' => 'new_confirm',
+					'id' => 'new_confirm',
+					'type' => 'password',
+					'pattern' => '^.{' . $this->data['min_password_length'] . '}.*$',
 				];
-                $this->data['user_id'] = [
-                    'name' => 'user_id',
-                    'id' => 'user_id',
-                    'type' => 'hidden',
-                    'value' => $user->id,
+				$this->data['user_id'] = [
+					'name' => 'user_id',
+					'id' => 'user_id',
+					'type' => 'hidden',
+					'value' => $user->id,
 				];
-                $this->data['csrf'] = $this->_get_csrf_nonce();
-                $this->data['code'] = $code;
+				$this->data['csrf'] = $this->_get_csrf_nonce();
+				$this->data['code'] = $code;
 
-                // render
-                $this->_render_page('auth/reset_password', $this->data);
-            } else {
-                // do we have a valid request?
-                if ($this->_valid_csrf_nonce() === FALSE || $user->id != $this->input->post('user_id')) {
+				// render
+				$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'reset_password', $this->data);
+			}
+			else
+			{
+				$identity = $user->{$this->config->item('identity', 'ion_auth')};
 
-                    // something fishy might be up
-                    $this->ion_auth->clear_forgotten_password_code($code);
+				// do we have a valid request?
+				if ($this->_valid_csrf_nonce() === FALSE || $user->id != $this->input->post('user_id'))
+				{
 
-                    show_error($this->lang->line('error_csrf'));
-                } else {
-                    // finally change the password
-                    $identity = $user->{$this->config->item('identity', 'ion_auth')};
+					// something fishy might be up
+					$this->ion_auth->clear_forgotten_password_code($identity);
 
-                    $change = $this->ion_auth->reset_password($identity, $this->input->post('new'));
+					show_error($this->lang->line('error_csrf'));
 
-                    if ($change) {
-                        // if the password was successfully changed
-                        $this->session->set_flashdata('message', $this->ion_auth->messages());
-                        redirect("auth/login", 'refresh');
-                    } else {
-                        $this->session->set_flashdata('message', $this->ion_auth->errors());
-                        redirect('auth/reset_password/' . $code, 'refresh');
-                    }
-                }
-            }
-        } else {
-            // if the code is invalid then send them back to the forgot password page
-            $this->session->set_flashdata('message', $this->ion_auth->errors());
-            redirect("auth/forgot_password", 'refresh');
-        }
-    }
+				}
+				else
+				{
+					// finally change the password
+					$change = $this->ion_auth->reset_password($identity, $this->input->post('new'));
 
-    // activate the user
-    public function activate($id, $code = false) {
-        if ($code !== false) {
-            $activation = $this->ion_auth->activate($id, $code);
-        } else if ($this->ion_auth->is_admin()) {
-            $activation = $this->ion_auth->activate($id);
-        }
+					if ($change)
+					{
+						// if the password was successfully changed
+						$this->session->set_flashdata('message', $this->ion_auth->messages());
+						redirect("auth/login", 'refresh');
+					}
+					else
+					{
+						$this->session->set_flashdata('message', $this->ion_auth->errors());
+						redirect('auth/reset_password/' . $code, 'refresh');
+					}
+				}
+			}
+		}
+		else
+		{
+			// if the code is invalid then send them back to the forgot password page
+			$this->session->set_flashdata('message', $this->ion_auth->errors());
+			redirect("auth/forgot_password", 'refresh');
+		}
+	}
 
-        if ($activation) {
-            // redirect them to the auth page
-            $this->session->set_flashdata('message', $this->ion_auth->messages());
-            redirect("auth", 'refresh');
-        } else {
-            // redirect them to the forgot password page
-            $this->session->set_flashdata('message', $this->ion_auth->errors());
-            redirect("auth/forgot_password", 'refresh');
-        }
-    }
+	/**
+	 * Activate the user
+	 *
+	 * @param int         $id   The user ID
+	 * @param string|bool $code The activation code
+	 */
+	public function activate($id, $code = FALSE)
+	{
+		$activation = FALSE;
 
-    // deactivate the user
-    public function deactivate($id = NULL) {
-        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
-            // redirect them to the home page because they must be an administrator to view this
-            return show_error('You must be an administrator to view this page.');
-        }
+		if ($code !== FALSE)
+		{
+			$activation = $this->ion_auth->activate($id, $code);
+		}
+		else if ($this->ion_auth->is_admin())
+		{
+			$activation = $this->ion_auth->activate($id);
+		}
 
-        $id = (int) $id;
+		if ($activation)
+		{
+			// redirect them to the auth page
+			$this->session->set_flashdata('message', $this->ion_auth->messages());
+			redirect("auth", 'refresh');
+		}
+		else
+		{
+			// redirect them to the forgot password page
+			$this->session->set_flashdata('message', $this->ion_auth->errors());
+			redirect("auth/forgot_password", 'refresh');
+		}
+	}
 
-        $this->load->library('form_validation');
-        $this->form_validation->set_rules('confirm', $this->lang->line('deactivate_validation_confirm_label'), 'required');
-        $this->form_validation->set_rules('id', $this->lang->line('deactivate_validation_user_id_label'), 'required|alpha_numeric');
+	/**
+	 * Deactivate the user
+	 *
+	 * @param int|string|null $id The user ID
+	 */
+	public function deactivate($id = NULL)
+	{
+		if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin())
+		{
+			// redirect them to the home page because they must be an administrator to view this
+			show_error('You must be an administrator to view this page.');
+		}
 
-        if ($this->form_validation->run() == FALSE) {
-            // insert csrf check
-            $this->data['csrf'] = $this->_get_csrf_nonce();
-            $this->data['user'] = $this->ion_auth->user($id)->row();
+		$id = (int)$id;
 
-            $this->_render_page('auth/deactivate_user', $this->data);
-        } else {
-            // do we really want to deactivate?
-            if ($this->input->post('confirm') == 'yes') {
-                // do we have a valid request?
-                if ($this->_valid_csrf_nonce() === FALSE || $id != $this->input->post('id')) {
-                    show_error($this->lang->line('error_csrf'));
-                }
+		$this->load->library('form_validation');
+		$this->form_validation->set_rules('confirm', $this->lang->line('deactivate_validation_confirm_label'), 'required');
+		$this->form_validation->set_rules('id', $this->lang->line('deactivate_validation_user_id_label'), 'required|alpha_numeric');
 
-                // do we have the right userlevel?
-                if ($this->ion_auth->logged_in() && $this->ion_auth->is_admin()) {
-                    $this->ion_auth->deactivate($id);
-                }
-            }
+		if ($this->form_validation->run() === FALSE)
+		{
+			// insert csrf check
+			$this->data['csrf'] = $this->_get_csrf_nonce();
+			$this->data['user'] = $this->ion_auth->user($id)->row();
 
-            // redirect them back to the auth page
-            redirect('auth', 'refresh');
-        }
-    }
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'deactivate_user', $this->data);
+		}
+		else
+		{
+			// do we really want to deactivate?
+			if ($this->input->post('confirm') == 'yes')
+			{
+				// do we have a valid request?
+				if ($this->_valid_csrf_nonce() === FALSE || $id != $this->input->post('id'))
+				{
+					show_error($this->lang->line('error_csrf'));
+				}
 
-    // create a new user
-    public function create_user() {
-        $this->data['title'] = $this->lang->line('create_user_heading');
+				// do we have the right userlevel?
+				if ($this->ion_auth->logged_in() && $this->ion_auth->is_admin())
+				{
+					$this->ion_auth->deactivate($id);
+				}
+			}
 
-        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
-            redirect('auth', 'refresh');
-        }
+			// redirect them back to the auth page
+			redirect('auth', 'refresh');
+		}
+	}
 
-        $tables = $this->config->item('tables', 'ion_auth');
-        $identity_column = $this->config->item('identity', 'ion_auth');
-        $this->data['identity_column'] = $identity_column;
+	/**
+	 * Create a new user
+	 */
+	public function create_user()
+	{
+		$this->data['title'] = $this->lang->line('create_user_heading');
 
-        // validate form input
-        $this->form_validation->set_rules('first_name', $this->lang->line('create_user_validation_fname_label'), 'required');
-        $this->form_validation->set_rules('last_name', $this->lang->line('create_user_validation_lname_label'), 'required');
-        if ($identity_column !== 'email') {
-            $this->form_validation->set_rules('identity', $this->lang->line('create_user_validation_identity_label'), 'required|is_unique[' . $tables['users'] . '.' . $identity_column . ']');
-            $this->form_validation->set_rules('email', $this->lang->line('create_user_validation_email_label'), 'required|valid_email');
-        } else {
-            $this->form_validation->set_rules('email', $this->lang->line('create_user_validation_email_label'), 'required|valid_email|is_unique[' . $tables['users'] . '.email]');
-        }
-        $this->form_validation->set_rules('phone', $this->lang->line('create_user_validation_phone_label'), 'trim');
-        $this->form_validation->set_rules('company', $this->lang->line('create_user_validation_company_label'), 'trim');
-        $this->form_validation->set_rules('password', $this->lang->line('create_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|max_length[' . $this->config->item('max_password_length', 'ion_auth') . ']|matches[password_confirm]');
-        $this->form_validation->set_rules('password_confirm', $this->lang->line('create_user_validation_password_confirm_label'), 'required');
+		if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin())
+		{
+			redirect('auth', 'refresh');
+		}
 
-        if ($this->form_validation->run() == true) {
-            $email = strtolower($this->input->post('email'));
-            $identity = ($identity_column === 'email') ? $email : $this->input->post('identity');
-            $password = $this->input->post('password');
+		$tables = $this->config->item('tables', 'ion_auth');
+		$identity_column = $this->config->item('identity', 'ion_auth');
+		$this->data['identity_column'] = $identity_column;
 
-            $additional_data = [
-                'first_name' => $this->input->post('first_name'),
-                'last_name' => $this->input->post('last_name'),
-                'company' => $this->input->post('company'),
-                'phone' => $this->input->post('phone'),
+		// validate form input
+		$this->form_validation->set_rules('first_name', $this->lang->line('create_user_validation_fname_label'), 'trim|required');
+		$this->form_validation->set_rules('last_name', $this->lang->line('create_user_validation_lname_label'), 'trim|required');
+		if ($identity_column !== 'email')
+		{
+			$this->form_validation->set_rules('identity', $this->lang->line('create_user_validation_identity_label'), 'trim|required|is_unique[' . $tables['users'] . '.' . $identity_column . ']');
+			$this->form_validation->set_rules('email', $this->lang->line('create_user_validation_email_label'), 'trim|required|valid_email');
+		}
+		else
+		{
+			$this->form_validation->set_rules('email', $this->lang->line('create_user_validation_email_label'), 'trim|required|valid_email|is_unique[' . $tables['users'] . '.email]');
+		}
+		$this->form_validation->set_rules('phone', $this->lang->line('create_user_validation_phone_label'), 'trim');
+		$this->form_validation->set_rules('company', $this->lang->line('create_user_validation_company_label'), 'trim');
+		$this->form_validation->set_rules('password', $this->lang->line('create_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|matches[password_confirm]');
+		$this->form_validation->set_rules('password_confirm', $this->lang->line('create_user_validation_password_confirm_label'), 'required');
+
+		if ($this->form_validation->run() === TRUE)
+		{
+			$email = strtolower($this->input->post('email'));
+			$identity = ($identity_column === 'email') ? $email : $this->input->post('identity');
+			$password = $this->input->post('password');
+
+			$additional_data = [
+				'first_name' => $this->input->post('first_name'),
+				'last_name' => $this->input->post('last_name'),
+				'company' => $this->input->post('company'),
+				'phone' => $this->input->post('phone'),
 			];
-        }
-        if ($this->form_validation->run() == true && $this->ion_auth->register($identity, $password, $email, $additional_data)) {
-            // check to see if we are creating the user
-            // redirect them back to the admin page
-            $this->session->set_flashdata('message', $this->ion_auth->messages());
-            redirect("auth", 'refresh');
-        } else {
-            // display the create user form
-            // set the flash data error message if there is one
-            $this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+		}
+		if ($this->form_validation->run() === TRUE && $this->ion_auth->register($identity, $password, $email, $additional_data))
+		{
+			// check to see if we are creating the user
+			// redirect them back to the admin page
+			$this->session->set_flashdata('message', $this->ion_auth->messages());
+			redirect("auth", 'refresh');
+		}
+		else
+		{
+			// display the create user form
+			// set the flash data error message if there is one
+			$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
 
-            $this->data['first_name'] = [
-                'name' => 'first_name',
-                'id' => 'first_name',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('first_name'),
+			$this->data['first_name'] = [
+				'name' => 'first_name',
+				'id' => 'first_name',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('first_name'),
 			];
-            $this->data['last_name'] = [
-                'name' => 'last_name',
-                'id' => 'last_name',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('last_name'),
+			$this->data['last_name'] = [
+				'name' => 'last_name',
+				'id' => 'last_name',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('last_name'),
 			];
-            $this->data['identity'] = [
-                'name' => 'identity',
-                'id' => 'identity',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('identity'),
+			$this->data['identity'] = [
+				'name' => 'identity',
+				'id' => 'identity',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('identity'),
 			];
-            $this->data['email'] = [
-                'name' => 'email',
-                'id' => 'email',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('email'),
+			$this->data['email'] = [
+				'name' => 'email',
+				'id' => 'email',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('email'),
 			];
-            $this->data['company'] = [
-                'name' => 'company',
-                'id' => 'company',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('company'),
+			$this->data['company'] = [
+				'name' => 'company',
+				'id' => 'company',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('company'),
 			];
-            $this->data['phone'] = [
-                'name' => 'phone',
-                'id' => 'phone',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('phone'),
+			$this->data['phone'] = [
+				'name' => 'phone',
+				'id' => 'phone',
+				'type' => 'text',
+				'value' => $this->form_validation->set_value('phone'),
 			];
-            $this->data['password'] = [
-                'name' => 'password',
-                'id' => 'password',
-                'type' => 'password',
-                'value' => $this->form_validation->set_value('password'),
+			$this->data['password'] = [
+				'name' => 'password',
+				'id' => 'password',
+				'type' => 'password',
+				'value' => $this->form_validation->set_value('password'),
 			];
-            $this->data['password_confirm'] = [
-                'name' => 'password_confirm',
-                'id' => 'password_confirm',
-                'type' => 'password',
-                'value' => $this->form_validation->set_value('password_confirm'),
+			$this->data['password_confirm'] = [
+				'name' => 'password_confirm',
+				'id' => 'password_confirm',
+				'type' => 'password',
+				'value' => $this->form_validation->set_value('password_confirm'),
 			];
 
-            $this->_render_page('auth/create_user', $this->data);
-        }
-    }
+			$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'create_user', $this->data);
+		}
+	}
+	/**
+	* Redirect a user checking if is admin
+	*/
+	public function redirectUser(){
+		if ($this->ion_auth->is_admin()){
+			redirect('auth', 'refresh');
+		}
+		redirect('/', 'refresh');
+	}
 
-    // edit a user
-    public function edit_user($id) {
-        $this->data['title'] = $this->lang->line('edit_user_heading');
+	/**
+	 * Edit a user
+	 *
+	 * @param int|string $id
+	 */
+	public function edit_user($id)
+	{
+		$this->data['title'] = $this->lang->line('edit_user_heading');
 
-        if (!$this->ion_auth->logged_in() || (!$this->ion_auth->is_admin() && !($this->ion_auth->user()->row()->id == $id))) {
-            redirect('auth', 'refresh');
-        }
+		if (!$this->ion_auth->logged_in() || (!$this->ion_auth->is_admin() && !($this->ion_auth->user()->row()->id == $id)))
+		{
+			redirect('auth', 'refresh');
+		}
 
-        $user = $this->ion_auth->user($id)->row();
-        $groups = $this->ion_auth->groups()->result_array();
-        $currentGroups = $this->ion_auth->get_users_groups($id)->result();
+		$user = $this->ion_auth->user($id)->row();
+		$groups = $this->ion_auth->groups()->result_array();
+		$currentGroups = $this->ion_auth->get_users_groups($id)->result();
 
-        // validate form input
-        $this->form_validation->set_rules('first_name', $this->lang->line('edit_user_validation_fname_label'), 'required');
-        $this->form_validation->set_rules('last_name', $this->lang->line('edit_user_validation_lname_label'), 'required');
-        $this->form_validation->set_rules('phone', $this->lang->line('edit_user_validation_phone_label'), 'required');
-        $this->form_validation->set_rules('company', $this->lang->line('edit_user_validation_company_label'), 'required');
+		// validate form input
+		$this->form_validation->set_rules('first_name', $this->lang->line('edit_user_validation_fname_label'), 'trim|required');
+		$this->form_validation->set_rules('last_name', $this->lang->line('edit_user_validation_lname_label'), 'trim|required');
+		$this->form_validation->set_rules('phone', $this->lang->line('edit_user_validation_phone_label'), 'trim|required');
+		$this->form_validation->set_rules('company', $this->lang->line('edit_user_validation_company_label'), 'trim|required');
 
-        if (isset($_POST) && !empty($_POST)) {
-            // do we have a valid request?
-            if ($this->_valid_csrf_nonce() === FALSE || $id != $this->input->post('id')) {
-                show_error($this->lang->line('error_csrf'));
-            }
+		if (isset($_POST) && !empty($_POST))
+		{
+			// do we have a valid request?
+			if ($this->_valid_csrf_nonce() === FALSE || $id != $this->input->post('id'))
+			{
+				show_error($this->lang->line('error_csrf'));
+			}
 
-            // update the password if it was posted
-            if ($this->input->post('password')) {
-                $this->form_validation->set_rules('password', $this->lang->line('edit_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|max_length[' . $this->config->item('max_password_length', 'ion_auth') . ']|matches[password_confirm]');
-                $this->form_validation->set_rules('password_confirm', $this->lang->line('edit_user_validation_password_confirm_label'), 'required');
-            }
+			// update the password if it was posted
+			if ($this->input->post('password'))
+			{
+				$this->form_validation->set_rules('password', $this->lang->line('edit_user_validation_password_label'), 'required|min_length[' . $this->config->item('min_password_length', 'ion_auth') . ']|matches[password_confirm]');
+				$this->form_validation->set_rules('password_confirm', $this->lang->line('edit_user_validation_password_confirm_label'), 'required');
+			}
 
-            if ($this->form_validation->run() === TRUE) {
-                $data = [
-                    'first_name' => $this->input->post('first_name'),
-                    'last_name' => $this->input->post('last_name'),
-                    'company' => $this->input->post('company'),
-                    'phone' => $this->input->post('phone'),
+			if ($this->form_validation->run() === TRUE)
+			{
+				$data = [
+					'first_name' => $this->input->post('first_name'),
+					'last_name' => $this->input->post('last_name'),
+					'company' => $this->input->post('company'),
+					'phone' => $this->input->post('phone'),
 				];
 
-                // update the password if it was posted
-                if ($this->input->post('password')) {
-                    $data['password'] = $this->input->post('password');
-                }
+				// update the password if it was posted
+				if ($this->input->post('password'))
+				{
+					$data['password'] = $this->input->post('password');
+				}
 
 				//update the otp if it was changed
 				$otp = $this->input->post('otp');
@@ -560,7 +705,7 @@ class Auth extends CI_Controller {
 				{
 					$otp = 0;
 				}
-		
+
 				$secret_key = '';
 				if ((bool)$otp != ($this->form_validation->set_value('otp', (bool)$user->otp)))
 				{
@@ -582,246 +727,282 @@ class Auth extends CI_Controller {
 					}
 				}
 
-                // Only allow updating groups if user is admin
-                if ($this->ion_auth->is_admin()) {
-                    //Update the groups user belongs to
-                    $groupData = $this->input->post('groups');
 
-                    if (isset($groupData) && !empty($groupData)) {
+				// Only allow updating groups if user is admin
+				if ($this->ion_auth->is_admin())
+				{
+					// Update the groups user belongs to
+					$groupData = $this->input->post('groups');
 
-                        $this->ion_auth->remove_from_group('', $id);
+					if (isset($groupData) && !empty($groupData))
+					{
 
-                        foreach ($groupData as $grp) {
-                            $this->ion_auth->add_to_group($grp, $id);
-                        }
-                    }
-                }
+						$this->ion_auth->remove_from_group('', $id);
 
-                // check to see if we are updating the user
-                if ($this->ion_auth->update($user->id, $data)) {
-                    // redirect them back to the admin page if admin, or to the base url if non admin
-                    $this->session->set_flashdata('message', $this->ion_auth->messages());
+						foreach ($groupData as $grp)
+						{
+							$this->ion_auth->add_to_group($grp, $id);
+						}
 
-                    if(!empty($secret_key))
+					}
+				}
+
+				// check to see if we are updating the user
+				if ($this->ion_auth->update($user->id, $data))
+				{
+					// redirect them back to the admin page if admin, or to the base url if non admin
+					$this->session->set_flashdata('message', $this->ion_auth->messages());
+
+					if(!empty($secret_key))
 					{
 						$this->session->set_flashdata('otp_secret_key', $secret_key);
 						$this->session->set_flashdata('otp_message', $user->{$this->config->item('identity', 'ion_auth')});
 						#$this->session->set_flashdata('otp_backup_codes', $backup_codes);
-						redirect('auth/otp_activation/'.$id); 
+						redirect('auth/otp_activation/'.$id);
 					}
 
-                    if ($this->ion_auth->is_admin()) {
-                        redirect('auth', 'refresh');
-                    } else {
-                        redirect('/', 'refresh');
-                    }
-                } else {
-                    // redirect them back to the admin page if admin, or to the base url if non admin
-                    $this->session->set_flashdata('message', $this->ion_auth->errors());
-                    if ($this->ion_auth->is_admin()) {
-                        redirect('auth', 'refresh');
-                    } else {
-                        redirect('/', 'refresh');
-                    }
-                }
-            }
-        }
+					$this->redirectUser();
 
-        // display the edit user form
-        $this->data['csrf'] = $this->_get_csrf_nonce();
+				}
+				else
+				{
+					// redirect them back to the admin page if admin, or to the base url if non admin
+					$this->session->set_flashdata('message', $this->ion_auth->errors());
+					$this->redirectUser();
 
-        // set the flash data error message if there is one
-        $this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+				}
 
-        // pass the user to the view
-        $this->data['user'] = $user;
-        $this->data['groups'] = $groups;
-        $this->data['currentGroups'] = $currentGroups;
+			}
+		}
 
-        $this->data['first_name'] = [
-            'name' => 'first_name',
-            'id' => 'first_name',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('first_name', $user->first_name),
+		// display the edit user form
+		$this->data['csrf'] = $this->_get_csrf_nonce();
+
+		// set the flash data error message if there is one
+		$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+
+		// pass the user to the view
+		$this->data['user'] = $user;
+		$this->data['groups'] = $groups;
+		$this->data['currentGroups'] = $currentGroups;
+
+		$this->data['first_name'] = [
+			'name'  => 'first_name',
+			'id'    => 'first_name',
+			'type'  => 'text',
+			'value' => $this->form_validation->set_value('first_name', $user->first_name),
 		];
-        $this->data['last_name'] = [
-            'name' => 'last_name',
-            'id' => 'last_name',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('last_name', $user->last_name),
+		$this->data['last_name'] = [
+			'name'  => 'last_name',
+			'id'    => 'last_name',
+			'type'  => 'text',
+			'value' => $this->form_validation->set_value('last_name', $user->last_name),
 		];
-        $this->data['company'] = [
-            'name' => 'company',
-            'id' => 'company',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('company', $user->company),
+		$this->data['company'] = [
+			'name'  => 'company',
+			'id'    => 'company',
+			'type'  => 'text',
+			'value' => $this->form_validation->set_value('company', $user->company),
 		];
-        $this->data['phone'] = [
-            'name' => 'phone',
-            'id' => 'phone',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('phone', $user->phone),
+		$this->data['phone'] = [
+			'name'  => 'phone',
+			'id'    => 'phone',
+			'type'  => 'text',
+			'value' => $this->form_validation->set_value('phone', $user->phone),
 		];
-        $this->data['password'] = [
-            'name' => 'password',
-            'id' => 'password',
-            'type' => 'password'
+		$this->data['password'] = [
+			'name' => 'password',
+			'id'   => 'password',
+			'type' => 'password'
 		];
-        $this->data['password_confirm'] = [
-            'name' => 'password_confirm',
-            'id' => 'password_confirm',
-            'type' => 'password'
-		];
-		$this->data['otp'] = [
-			'name' => 'otp',
-			'id'   => 'otp',
-			'value' => TRUE,
-			'checked' => $this->form_validation->set_value('otp', (bool)$user->otp)
+		$this->data['password_confirm'] = [
+			'name' => 'password_confirm',
+			'id'   => 'password_confirm',
+			'type' => 'password'
 		];
 
-        $this->_render_page('auth/edit_user', $this->data);
-    }
+		$this->_render_page('auth/edit_user', $this->data);
+	}
 
-    // create a new group
-    public function create_group() {
-        $this->data['title'] = $this->lang->line('create_group_title');
+	/**
+	 * Create a new group
+	 */
+	public function create_group()
+	{
+		$this->data['title'] = $this->lang->line('create_group_title');
 
-        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
-            redirect('auth', 'refresh');
-        }
+		if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin())
+		{
+			redirect('auth', 'refresh');
+		}
 
-        // validate form input
-        $this->form_validation->set_rules('group_name', $this->lang->line('create_group_validation_name_label'), 'required|alpha_dash');
+		// validate form input
+		$this->form_validation->set_rules('group_name', $this->lang->line('create_group_validation_name_label'), 'trim|required|alpha_dash');
 
-        if ($this->form_validation->run() == TRUE) {
-            $new_group_id = $this->ion_auth->create_group($this->input->post('group_name'), $this->input->post('description'));
-            if ($new_group_id) {
-                // check to see if we are creating the group
-                // redirect them back to the admin page
-                $this->session->set_flashdata('message', $this->ion_auth->messages());
-                redirect("auth", 'refresh');
-            }
-        } else {
-            // display the create group form
-            // set the flash data error message if there is one
-            $this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+		if ($this->form_validation->run() === TRUE)
+		{
+			$new_group_id = $this->ion_auth->create_group($this->input->post('group_name'), $this->input->post('description'));
+			if ($new_group_id)
+			{
+				// check to see if we are creating the group
+				// redirect them back to the admin page
+				$this->session->set_flashdata('message', $this->ion_auth->messages());
+				redirect("auth", 'refresh');
+			}
+		}
+		else
+		{
+			// display the create group form
+			// set the flash data error message if there is one
+			$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
 
-            $this->data['group_name'] = [
-                'name' => 'group_name',
-                'id' => 'group_name',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('group_name'),
+			$this->data['group_name'] = [
+				'name'  => 'group_name',
+				'id'    => 'group_name',
+				'type'  => 'text',
+				'value' => $this->form_validation->set_value('group_name'),
 			];
-            $this->data['description'] = [
-                'name' => 'description',
-                'id' => 'description',
-                'type' => 'text',
-                'value' => $this->form_validation->set_value('description'),
+			$this->data['description'] = [
+				'name'  => 'description',
+				'id'    => 'description',
+				'type'  => 'text',
+				'value' => $this->form_validation->set_value('description'),
 			];
 
-            $this->_render_page('auth/create_group', $this->data);
-        }
-    }
+			$this->_render_page('auth/create_group', $this->data);
+		}
+	}
 
-    // edit a group
-    public function edit_group($id) {
-        // bail if no group id given
-        if (!$id || empty($id)) {
-            redirect('auth', 'refresh');
-        }
+	/**
+	 * Edit a group
+	 *
+	 * @param int|string $id
+	 */
+	public function edit_group($id)
+	{
+		// bail if no group id given
+		if (!$id || empty($id))
+		{
+			redirect('auth', 'refresh');
+		}
 
-        $this->data['title'] = $this->lang->line('edit_group_title');
+		$this->data['title'] = $this->lang->line('edit_group_title');
 
-        if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin()) {
-            redirect('auth', 'refresh');
-        }
+		if (!$this->ion_auth->logged_in() || !$this->ion_auth->is_admin())
+		{
+			redirect('auth', 'refresh');
+		}
 
-        $group = $this->ion_auth->group($id)->row();
+		$group = $this->ion_auth->group($id)->row();
 
-        // validate form input
-        $this->form_validation->set_rules('group_name', $this->lang->line('edit_group_validation_name_label'), 'required|alpha_dash');
+		// validate form input
+		$this->form_validation->set_rules('group_name', $this->lang->line('edit_group_validation_name_label'), 'required|alpha_dash');
 
-        if (isset($_POST) && !empty($_POST)) {
-            if ($this->form_validation->run() === TRUE) {
-                $group_update = $this->ion_auth->update_group($id, $_POST['group_name'], $_POST['group_description']);
+		if (isset($_POST) && !empty($_POST))
+		{
+			if ($this->form_validation->run() === TRUE)
+			{
+				$group_update = $this->ion_auth->update_group($id, $_POST['group_name'], $_POST['group_description']);
 
-                if ($group_update) {
-                    $this->session->set_flashdata('message', $this->lang->line('edit_group_saved'));
-                } else {
-                    $this->session->set_flashdata('message', $this->ion_auth->errors());
-                }
-                redirect("auth", 'refresh');
-            }
-        }
+				if ($group_update)
+				{
+					$this->session->set_flashdata('message', $this->lang->line('edit_group_saved'));
+				}
+				else
+				{
+					$this->session->set_flashdata('message', $this->ion_auth->errors());
+				}
+				redirect("auth", 'refresh');
+			}
+		}
 
-        // set the flash data error message if there is one
-        $this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
+		// set the flash data error message if there is one
+		$this->data['message'] = (validation_errors() ? validation_errors() : ($this->ion_auth->errors() ? $this->ion_auth->errors() : $this->session->flashdata('message')));
 
-        // pass the user to the view
-        $this->data['group'] = $group;
+		// pass the user to the view
+		$this->data['group'] = $group;
 
-        $readonly = $this->config->item('admin_group', 'ion_auth') === $group->name ? 'readonly' : '';
+		$readonly = $this->config->item('admin_group', 'ion_auth') === $group->name ? 'readonly' : '';
 
-        $this->data['group_name'] = [
-            'name' => 'group_name',
-            'id' => 'group_name',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('group_name', $group->name),
-            $readonly => $readonly,
+		$this->data['group_name'] = [
+			'name'    => 'group_name',
+			'id'      => 'group_name',
+			'type'    => 'text',
+			'value'   => $this->form_validation->set_value('group_name', $group->name),
+			$readonly => $readonly,
 		];
-        $this->data['group_description'] = [
-            'name' => 'group_description',
-            'id' => 'group_description',
-            'type' => 'text',
-            'value' => $this->form_validation->set_value('group_description', $group->description),
+		$this->data['group_description'] = [
+			'name'  => 'group_description',
+			'id'    => 'group_description',
+			'type'  => 'text',
+			'value' => $this->form_validation->set_value('group_description', $group->description),
 		];
 
-        $this->_render_page('auth/edit_group', $this->data);
-    }
+		$this->_render_page('auth' . DIRECTORY_SEPARATOR . 'edit_group', $this->data);
+	}
 
-    // Display OTP secret key and QR-code
-    public function otp_activation($id) {
-        if (!isset($id)) {
-            redirect('/', 'refresh');
-        }
-        $this->data['otp_secret_key'] = $this->session->flashdata('otp_secret_key');
-        if ($this->data['otp_secret_key'] != NULL) {
-            $this->data['message'] = $this->session->flashdata('message');
-            $this->data['google_chart_url'] = $this->ion_auth->get_qrcode_googleurl($this->session->flashdata('otp_message'), $this->data['otp_secret_key'], $this->config->item('otp', 'ion_auth')['issuer']);
-            $this->data['backup_codes'] = unserialize($this->ion_auth->backup_codes_db($id));
+	// Display OTP secret key and QR-code
+	public function otp_activation($id) {
+		if (!isset($id)) {
+			redirect('/', 'refresh');
+		}
+		$this->data['otp_secret_key'] = $this->session->flashdata('otp_secret_key');
+		if ($this->data['otp_secret_key'] != NULL) {
+			$this->data['message'] = $this->session->flashdata('message');
+			$this->data['google_chart_url'] = $this->ion_auth->get_qrcode_googleurl($this->session->flashdata('otp_message'), $this->data['otp_secret_key'], $this->config->item('otp', 'ion_auth')['issuer']);
+			$this->data['backup_codes'] = unserialize($this->ion_auth->backup_codes_db($id));
 
-            $this->_render_page('auth/otp_activation', $this->data);
-        } else {
-            redirect('/', 'refresh');
-        }
-    }
+			$this->_render_page('auth/otp_activation', $this->data);
+		} else {
+			redirect('/', 'refresh');
+		}
+	}
 
-    public function _get_csrf_nonce() {
-        $this->load->helper('string');
-        $key = random_string('alnum', 8);
-        $value = random_string('alnum', 20);
-        $this->session->set_flashdata('csrfkey', $key);
-        $this->session->set_flashdata('csrfvalue', $value);
+	/**
+	 * @return array A CSRF key-value pair
+	 */
+	public function _get_csrf_nonce()
+	{
+		$this->load->helper('string');
+		$key = random_string('alnum', 8);
+		$value = random_string('alnum', 20);
+		$this->session->set_flashdata('csrfkey', $key);
+		$this->session->set_flashdata('csrfvalue', $value);
 
-        return [$key => $value];
-    }
+		return [$key => $value];
+	}
 
-    public function _valid_csrf_nonce() {
-        $csrfkey = $this->input->post($this->session->flashdata('csrfkey'));
-        if ($csrfkey && $csrfkey == $this->session->flashdata('csrfvalue')) {
-            return TRUE;
-        } else {
-            return FALSE;
-        }
-    }
+	/**
+	 * @return bool Whether the posted CSRF token matches
+	 */
+	public function _valid_csrf_nonce(){
+		$csrfkey = $this->input->post($this->session->flashdata('csrfkey'));
+		if ($csrfkey && $csrfkey === $this->session->flashdata('csrfvalue'))
+		{
+			return TRUE;
+		}
+			return FALSE;
+	}
 
-    public function _render_page($view, $data = null, $returnhtml = false) {//I think this makes more sense
-        $this->viewdata = (empty($data)) ? $this->data : $data;
+	/**
+	 * @param string     $view
+	 * @param array|null $data
+	 * @param bool       $returnhtml
+	 *
+	 * @return mixed
+	 */
+	public function _render_page($view, $data = NULL, $returnhtml = FALSE)//I think this makes more sense
+	{
 
-        $view_html = $this->load->view($view, $this->viewdata, $returnhtml);
+		$viewdata = (empty($data)) ? $this->data : $data;
 
-        if ($returnhtml)
-            return $view_html; //This will return html on 3rd argument being true
-    }
+		$view_html = $this->load->view($view, $viewdata, $returnhtml);
+
+		// This will return html on 3rd argument being true
+		if ($returnhtml)
+		{
+			return $view_html;
+		}
+	}
 
 }

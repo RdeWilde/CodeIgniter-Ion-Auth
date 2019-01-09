@@ -36,11 +36,14 @@ CREATE TABLE `users` (
   `otp_login_code` varchar(40) DEFAULT NULL,
   `otp_backup_codes` varchar(384) DEFAULT NULL,
   `salt` varchar(255) DEFAULT NULL,
-  `email` varchar(100) NOT NULL,
-  `activation_code` varchar(40) DEFAULT NULL,
-  `forgotten_password_code` varchar(40) DEFAULT NULL,
+  `email` varchar(254) NOT NULL,
+  `activation_selector` varchar(255) DEFAULT NULL,
+  `activation_code` varchar(255) DEFAULT NULL,
+  `forgotten_password_selector` varchar(255) DEFAULT NULL,
+  `forgotten_password_code` varchar(255) DEFAULT NULL,
   `forgotten_password_time` int(11) unsigned DEFAULT NULL,
-  `remember_code` varchar(40) DEFAULT NULL,
+  `remember_selector` varchar(255) DEFAULT NULL,
+  `remember_code` varchar(255) DEFAULT NULL,
   `created_on` int(11) unsigned NOT NULL,
   `last_login` int(11) unsigned DEFAULT NULL,
   `active` tinyint(1) unsigned DEFAULT NULL,
@@ -48,7 +51,11 @@ CREATE TABLE `users` (
   `last_name` varchar(50) DEFAULT NULL,
   `company` varchar(100) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  CONSTRAINT `uc_email` UNIQUE (`email`),
+  CONSTRAINT `uc_activation_selector` UNIQUE (`activation_selector`),
+  CONSTRAINT `uc_forgotten_password_selector` UNIQUE (`forgotten_password_selector`),
+  CONSTRAINT `uc_remember_selector` UNIQUE (`remember_selector`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
@@ -57,7 +64,7 @@ CREATE TABLE `users` (
 #
 
 INSERT INTO `users` (`id`, `ip_address`, `username`, `password`, `otp`, `otp_login_code`, `otp_backup_codes`, `salt`, `email`, `activation_code`, `forgotten_password_code`, `created_on`, `last_login`, `active`, `first_name`, `last_name`, `company`, `phone`) VALUES
-     ('1','127.0.0.1','administrator','$2a$07$SeBknntpZror9uyftVopmu61qg0ms8Qv1yV6FG.kQOSM.9QhmTo36',NULL,NULL,NULL,'','admin@admin.com','',NULL,'1268889823','1268889823','1', 'Admin','istrator','ADMIN','0');
+     ('1','127.0.0.1','administrator','$2y$08$200Z6ZZbp3RAEXoaWcMA6uJOFicwNZaqk4oDhqTUiFXFe63MG.Daa',NULL,NULL,NULL,'',''admin@admin.com','',NULL,'1268889823','1268889823','1', 'Admin','istrator','ADMIN','0');
 
 
 DROP TABLE IF EXISTS `users_groups`;
@@ -91,7 +98,7 @@ DROP TABLE IF EXISTS `login_attempts`;
 
 CREATE TABLE `login_attempts` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-  `ip_address` varchar(15) NOT NULL,
+  `ip_address` varchar(45) NOT NULL,
   `login` varchar(100) NOT NULL,
   `time` int(11) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`)
